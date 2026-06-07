@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/LuHz123/AI-reading/compare/v0.16.0...v0.17.0) (2026-06-07)
+
+
+### ✨ 新功能
+
+* add AI Novel novel-to-screenplay tool ([eaf7795](https://github.com/LuHz123/AI-reading/commit/eaf77959b0a16e1e8002fca1fff6cef5b6ca0919))
+* update AI Novel StoryPlay workspace ([bdf4fa9](https://github.com/LuHz123/AI-reading/commit/bdf4fa9ac8340e3692a2669b1ab3aa37ff0ecb3f))
+
+
+### 🐛 Bug 修复
+
+* restore CI dependency lockfile ([be6a171](https://github.com/LuHz123/AI-reading/commit/be6a17122a8f4e18145615316d81df00454a0acf))
+
 ## [0.16.0](https://github.com/ArcReel/ArcReel/compare/v0.15.2...v0.16.0) (2026-06-03)
 
 
