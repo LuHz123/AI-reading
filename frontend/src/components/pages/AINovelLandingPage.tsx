@@ -1,5 +1,6 @@
 import { ArrowRight, FileCode2, PenLine, Sparkles } from "lucide-react";
 import { Link } from "wouter";
+import { BRAND } from "@/branding";
 
 const previewCards = [
   {
@@ -122,12 +123,12 @@ export function AINovelLandingPage() {
         <Link
           href="/app/projects"
           className="inline-flex items-center gap-3 text-white no-underline"
-          aria-label="STORYPLAY"
+          aria-label={BRAND.name}
         >
           <span className="grid h-9 w-9 place-items-center rounded-full border border-white/22 bg-white/10">
             <PenLine className="h-[18px] w-[18px]" aria-hidden />
           </span>
-          <span className="text-xl font-semibold tracking-[0.18em]">STORYPLAY</span>
+          <span className="text-xl font-semibold tracking-[0.12em]">{BRAND.name}</span>
         </Link>
 
         <div className="hidden rounded-full bg-gradient-to-r from-[#924dff] via-[#d844b5] to-[#ff875f] px-5 py-2 text-sm font-medium shadow-[0_16px_45px_rgba(193,64,172,0.25)] md:block">

@@ -74,7 +74,7 @@ function DashboardSidebar({
       <Link
         href="/app/projects"
         className="mb-8 grid h-11 w-11 place-items-center rounded-[16px] bg-black text-white"
-        aria-label="STORYPLAY 首页"
+        aria-label="AI Novel"
       >
         <PenLine className="h-5 w-5" aria-hidden />
       </Link>

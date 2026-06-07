@@ -20,7 +20,7 @@ describe("AINovelLandingPage", () => {
   it("renders the StoryPlay-style public landing page without a login entry", () => {
     renderLanding();
 
-    expect(screen.getByText("STORYPLAY")).toBeInTheDocument();
+    expect(screen.getByText("AI Novel")).toBeInTheDocument();
     expect(screen.getByText("短剧剧本创作平台")).toBeInTheDocument();
     expect(screen.getByText("让AI辅助故事创作者成为超级个体")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "登录" })).not.toBeInTheDocument();
