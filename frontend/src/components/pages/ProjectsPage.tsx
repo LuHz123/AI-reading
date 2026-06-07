@@ -1,47 +1,37 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
-import { errMsg, voidCall, voidPromise } from "@/utils/async";
-import { formatDate } from "@/utils/date-format";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Link, useLocation } from "wouter";
 import {
   AlertTriangle,
+  Edit3,
+  FileCode2,
+  Folder,
+  Home,
   Library,
   Loader2,
-  MoreHorizontal,
+  PenLine,
   Plus,
   Search,
   Settings,
   Trash2,
   Upload,
 } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { API } from "@/api";
-import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
+import { useProjectsStore } from "@/stores/projects-store";
 import { ArchiveDiagnosticsDialog } from "@/components/shared/ArchiveDiagnosticsDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { GlassModal } from "@/components/ui/GlassModal";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { SecondaryButton } from "@/components/ui/SecondaryButton";
-import { Typewriter, type TypewriterSegment } from "@/components/ui/Typewriter";
-import { WARM_TONE } from "@/utils/severity-tone";
+import { errMsg, voidCall, voidPromise } from "@/utils/async";
+import { formatDate } from "@/utils/date-format";
 import { getProjectDisplayName } from "@/utils/project-display";
+import { WARM_TONE } from "@/utils/severity-tone";
 import { CreateProjectModal } from "./CreateProjectModal";
-import { OpenClawModal } from "./OpenClawModal";
 import { rememberAssetLibraryReturnTo } from "./AssetLibraryPage";
-import { ICON_BTN_FILLED_CLS, posterGridStyle } from "@/components/ui/darkroom-tokens";
-import { BRAND } from "@/branding";
 import {
-  PHASE_ORDER,
   type Phase,
   type ImportConflictPolicy,
   type ImportFailureDiagnostics,
@@ -49,104 +39,10 @@ import {
   type ProjectSummary,
 } from "@/types";
 
-// 项目大厅 · Darkroom
-// 设计：导演的暗房（Claude Design 交付包 ArcReel Projects B Darkroom.html）
-// 数据：仅消费 ProjectSummary 真实字段；hue 由 project.name 哈希派生
-
 type PhaseFilter = Phase | "all";
-type GreetingKey =
-  | "lobby_hero_greeting_morning"
-  | "lobby_hero_greeting_afternoon"
-  | "lobby_hero_greeting_evening"
-  | "lobby_hero_greeting_late";
-
-interface PhaseTone {
-  dot: string;
-  text: string;
-  glow: string;
-}
-
-const PHASE_TONE: Record<Phase, PhaseTone> = {
-  setup: {
-    dot: "oklch(0.64 0.020 265)",
-    text: "oklch(0.78 0.010 265)",
-    glow: "transparent",
-  },
-  worldbuilding: {
-    dot: "oklch(0.78 0.10 220)",
-    text: "oklch(0.86 0.06 220)",
-    glow: "oklch(0.78 0.10 220 / 0.35)",
-  },
-  scripting: {
-    dot: "oklch(0.80 0.12 75)",
-    text: "oklch(0.90 0.08 75)",
-    glow: "oklch(0.80 0.12 75 / 0.35)",
-  },
-  production: {
-    dot: "oklch(0.76 0.09 295)",
-    text: "oklch(0.88 0.05 295)",
-    glow: "oklch(0.76 0.09 295 / 0.40)",
-  },
-  completed: {
-    dot: "oklch(0.78 0.10 155)",
-    text: "oklch(0.86 0.06 155)",
-    glow: "oklch(0.78 0.10 155 / 0.35)",
-  },
-};
-
-const POSTER_FX_STYLE: CSSProperties = {
-  background:
-    "linear-gradient(115deg, oklch(1 0 0 / 0.18) 0%, transparent 30%), linear-gradient(295deg, oklch(0 0 0 / 0.55) 0%, transparent 45%)",
-};
-
-const POSTER_GRID_STYLE = posterGridStyle();
-
-const POSTER_SPROCKET_STYLE: CSSProperties = {
-  background:
-    "repeating-linear-gradient(0deg, oklch(0 0 0 / 0.6) 0 6px, transparent 6px 12px)",
-};
-
-const ACCENT_BUTTON_STYLE: CSSProperties = {
-  color: "oklch(0.14 0 0)",
-  background:
-    "linear-gradient(180deg, var(--color-accent-2), var(--color-accent))",
-  boxShadow:
-    "inset 0 1px 0 oklch(1 0 0 / 0.3), 0 0 0 1px oklch(0.55 0.10 295 / 0.4), 0 4px 14px -6px var(--color-accent)",
-};
-
-function hashHue(name: string, salt: number): number {
-  let hash = salt;
-  for (let i = 0; i < name.length; i += 1) {
-    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  }
-  return hash % 360;
-}
 
 function asProjectStatus(s: ProjectSummary["status"]): ProjectStatus | null {
   return s && "current_phase" in s ? (s as ProjectStatus) : null;
-}
-
-function projectActivityScore(p: ProjectSummary): number {
-  const status = asProjectStatus(p.status);
-  if (!status) return -1;
-  if (status.current_phase === "production" && status.phase_progress < 1) {
-    return 100 + status.phase_progress * 10;
-  }
-  if (status.current_phase === "completed") return -10;
-  return PHASE_ORDER.indexOf(status.current_phase) * 10 + status.phase_progress;
-}
-
-function pickFeaturedProject(projects: ProjectSummary[]): ProjectSummary | null {
-  let best: ProjectSummary | null = null;
-  let bestScore = -Infinity;
-  for (const p of projects) {
-    const score = projectActivityScore(p);
-    if (score > bestScore) {
-      best = p;
-      bestScore = score;
-    }
-  }
-  return bestScore > 0 ? best : null;
 }
 
 function styleLabelOf(p: ProjectSummary, t: TFunction): string {
@@ -155,176 +51,71 @@ function styleLabelOf(p: ProjectSummary, t: TFunction): string {
   return t("dashboard:style_not_set");
 }
 
-function getGreetingKey(d = new Date()): GreetingKey {
-  const h = d.getHours();
-  if (h >= 5 && h < 11) return "lobby_hero_greeting_morning";
-  if (h >= 11 && h < 14) return "lobby_hero_greeting_afternoon";
-  if (h >= 14 && h < 22) return "lobby_hero_greeting_evening";
-  return "lobby_hero_greeting_late";
-}
+function DashboardSidebar({
+  onHome,
+  onAssets,
+  onSettings,
+  configIncomplete,
+}: {
+  onHome: () => void;
+  onAssets: () => void;
+  onSettings: () => void;
+  configIncomplete: boolean;
+}) {
+  const navItems = [
+    { label: "项目", icon: Home, active: true, onClick: onHome },
+    { label: "剧本", icon: FileCode2, active: false, onClick: onHome },
+    { label: "资产", icon: Library, active: false, onClick: onAssets },
+    { label: "设置", icon: Settings, active: false, onClick: onSettings, badge: configIncomplete },
+  ];
 
-// -- Poster -------------------------------------------------------------------
-
-interface PosterProps {
-  project: ProjectSummary;
-  styleLabel: string;
-  large?: boolean;
-}
-
-function Poster({ project, styleLabel, large = false }: PosterProps) {
-  const { t } = useTranslation("dashboard");
-  const hue1 = useMemo(() => hashHue(project.name, 17), [project.name]);
-  const aspect = large ? "2.39 / 1" : "2 / 1";
-  const radius = large ? 8 : 6;
   return (
-    <div
-      className="relative overflow-hidden"
-      style={{
-        width: "100%",
-        aspectRatio: aspect,
-        borderRadius: radius,
-        background: `radial-gradient(120% 80% at 30% 30%, oklch(0.55 0.15 ${hue1}) 0%, oklch(0.28 0.08 ${(hue1 + 10) % 360}) 45%, oklch(0.14 0.02 265) 100%)`,
-        boxShadow: "inset 0 0 0 1px oklch(1 0 0 / 0.06)",
-      }}
-    >
-      {project.thumbnail ? (
-        <img
-          src={project.thumbnail}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          className="absolute inset-0 h-full w-full object-cover opacity-90"
-        />
-      ) : null}
-      <div aria-hidden className="pointer-events-none absolute inset-0" style={POSTER_FX_STYLE} />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-10"
-        style={POSTER_GRID_STYLE}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-2.5 opacity-50"
-        style={POSTER_SPROCKET_STYLE}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-2.5 opacity-50"
-        style={POSTER_SPROCKET_STYLE}
-      />
-      <div
-        className="absolute left-[18px] top-[14px] font-mono font-bold uppercase tabular-nums"
-        style={{ color: "oklch(0.95 0 0 / 0.78)", fontSize: 9, letterSpacing: "0.14em" }}
+    <aside className="flex w-[76px] shrink-0 flex-col items-center rounded-[24px] bg-white py-5 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
+      <Link
+        href="/app/projects"
+        className="mb-8 grid h-11 w-11 place-items-center rounded-[16px] bg-black text-white"
+        aria-label="STORYPLAY 首页"
       >
-        {styleLabel}
-      </div>
-      <div className="absolute right-[18px] bottom-[14px] left-[18px]">
-        <div
-          className="font-editorial"
-          style={{
-            fontWeight: 400,
-            fontSize: large ? 54 : 30,
-            lineHeight: 0.95,
-            color: "oklch(0.99 0.005 0)",
-            letterSpacing: "-0.02em",
-            textShadow: "0 2px 28px oklch(0 0 0 / 0.5)",
-            wordBreak: "break-word",
-            overflowWrap: "anywhere",
-          }}
-        >
-          {getProjectDisplayName(project.title, t("untitled_project"))}
-        </div>
-      </div>
-    </div>
+        <PenLine className="h-5 w-5" aria-hidden />
+      </Link>
+      <nav className="flex flex-1 flex-col items-center gap-3" aria-label="项目管理导航">
+        {navItems.map(({ label, icon: Icon, active, onClick, badge }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={onClick}
+            title={label}
+            aria-label={label}
+            className={
+              "relative grid h-11 w-11 place-items-center rounded-[15px] transition " +
+              (active
+                ? "bg-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.22)]"
+                : "text-slate-500 hover:bg-slate-100 hover:text-black")
+            }
+          >
+            <Icon className="h-5 w-5" aria-hidden />
+            {badge ? (
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500" />
+            ) : null}
+          </button>
+        ))}
+      </nav>
+    </aside>
   );
 }
 
-// -- PhasePill / EpisodeStrip -------------------------------------------------
-
-function PhasePill({ phase, label }: { phase: Phase | null; label: string }) {
-  const tone = phase ? PHASE_TONE[phase] : PHASE_TONE.setup;
-  const isProduction = phase === "production";
+function LightProgressBar({ value }: { value: number }) {
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border border-hairline-soft bg-bg-grad-a/60 px-2 py-[2px] font-mono text-[10px] font-semibold uppercase tracking-[0.06em]"
-      style={{ color: tone.text }}
-    >
-      <span
-        aria-hidden
-        className={isProduction ? "motion-safe:animate-pulse" : undefined}
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: 3,
-          background: tone.dot,
-          boxShadow: `0 0 6px ${tone.glow}`,
-        }}
+    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+      <div
+        className="h-full rounded-full bg-black transition-[width]"
+        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
       />
-      {label}
-    </span>
-  );
-}
-
-function episodeDotColor(
-  i: number,
-  summary: ProjectStatus["episodes_summary"],
-): { bg: string; glow?: string } {
-  const inProductionEnd = summary.completed + summary.in_production;
-  const scriptedEnd = inProductionEnd + summary.scripted;
-  if (i < summary.completed) return { bg: "var(--color-good)" };
-  if (i < inProductionEnd) {
-    return { bg: "var(--color-accent)", glow: "0 0 6px var(--color-accent-glow)" };
-  }
-  if (i < scriptedEnd) return { bg: "oklch(0.55 0.010 265)" };
-  return { bg: "oklch(0.22 0.011 265)" };
-}
-
-function EpisodeStrip({ summary }: { summary: ProjectStatus["episodes_summary"] }) {
-  if (summary.total === 0) return null;
-  return (
-    <div className="flex gap-[3px]">
-      {Array.from({ length: summary.total }).map((_, i) => {
-        const c = episodeDotColor(i, summary);
-        return (
-          <span
-            key={i}
-            className="h-[3px] flex-1 rounded-[1.5px]"
-            style={{ background: c.bg, boxShadow: c.glow }}
-          />
-        );
-      })}
     </div>
   );
 }
 
-// -- 渐变进度条 — 复用 ui/ProgressBar，仅注入 Darkroom 视觉 ------------------
-
-function gradientProgressStyles(variant: "accent" | "good"): {
-  trackStyle: CSSProperties;
-  barStyle: CSSProperties;
-} {
-  const trackStyle: CSSProperties = { background: "oklch(0.16 0.010 265)" };
-  if (variant === "good") {
-    return {
-      trackStyle,
-      barStyle: {
-        background: "linear-gradient(90deg, var(--color-good), oklch(0.86 0.08 155))",
-        boxShadow: "0 0 6px var(--color-good)",
-      },
-    };
-  }
-  return {
-    trackStyle,
-    barStyle: {
-      background: "linear-gradient(90deg, var(--color-accent), var(--color-accent-2))",
-      boxShadow: "0 0 6px var(--color-accent-glow)",
-    },
-  };
-}
-
-// -- ProjectCard --------------------------------------------------------------
-
-interface ProjectCardProps {
+interface ProjectDashboardCardProps {
   project: ProjectSummary;
   styleLabel: string;
   phaseLabels: Record<Phase, string>;
@@ -332,334 +123,113 @@ interface ProjectCardProps {
   onDelete: () => void;
 }
 
-function ProjectCard({ project, styleLabel, phaseLabels, t, onDelete }: ProjectCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onPointerDown(e: MouseEvent) {
-      const target = e.target as Node;
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        triggerRef.current?.focus();
-      }
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
+function ProjectDashboardCard({
+  project,
+  styleLabel,
+  phaseLabels,
+  t,
+  onDelete,
+}: ProjectDashboardCardProps) {
   const status = asProjectStatus(project.status);
   const phase: Phase | null = status?.current_phase ?? null;
-  const phaseLabel = phase ? phaseLabels[phase] : "";
+  const phaseLabel = phase ? phaseLabels[phase] : t("dashboard:phase_setup");
   const progressPct = status ? Math.round(status.phase_progress * 100) : 0;
-  const characters = status?.characters ?? { completed: 0, total: 0 };
-  const scenes = status?.scenes ?? { completed: 0, total: 0 };
-  const propsStat = status?.props ?? { completed: 0, total: 0 };
   const episodes =
     status?.episodes_summary ?? { total: 0, scripted: 0, in_production: 0, completed: 0 };
+  const characters = status?.characters ?? { completed: 0, total: 0 };
+  const scenes = status?.scenes ?? { completed: 0, total: 0 };
   const projectDisplayName = getProjectDisplayName(project.title, t("dashboard:untitled_project"));
-
-  const { trackStyle, barStyle } = gradientProgressStyles(
-    phase === "completed" ? "good" : "accent",
-  );
+  const summary =
+    episodes.total > 0
+      ? `${episodes.completed}/${episodes.total} 集完成，${episodes.in_production} 集制作中`
+      : "从小说章节生成剧本后，可继续管理角色、分场和分镜资产。";
 
   return (
-    <article className="group relative overflow-hidden rounded-[12px] border border-hairline bg-bg-grad-a/85 transition-[transform,border-color,box-shadow] duration-150 motion-safe:hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-[0_18px_40px_-22px_oklch(0_0_0_/_0.6),0_0_0_1px_var(--color-accent-soft)] focus-within:border-accent/60 focus-within:shadow-[0_0_0_2px_var(--color-accent-soft)]">
-      <Link
-        href={`/app/projects/${project.name}`}
-        className="block w-full text-left text-text no-underline outline-none"
-        aria-label={`${projectDisplayName} · ${styleLabel}${phaseLabel ? ` · ${phaseLabel}` : ""}`}
-      >
-        <div className="p-2.5">
-          <Poster project={project} styleLabel={styleLabel} />
-        </div>
+    <article className="group overflow-hidden rounded-[8px] border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+      <div className="relative h-36 overflow-hidden bg-slate-100">
+        {project.thumbnail ? (
+          <img
+            src={project.thumbnail}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="h-full w-full bg-[radial-gradient(circle_at_26%_18%,rgba(255,255,255,0.82),transparent_24%),linear-gradient(135deg,#eceff3_0%,#d8dde5_42%,#b7c1cd_100%)]" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/42 via-transparent to-transparent" />
+        <span className="absolute left-4 top-4 rounded-full bg-white/88 px-3 py-1 text-xs font-medium text-slate-700 backdrop-blur">
+          {styleLabel}
+        </span>
+        <span className="absolute bottom-4 left-4 rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">
+          {phaseLabel}
+        </span>
+      </div>
 
-        <div className="px-4 pt-1 pb-3.5">
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <h3 className="truncate text-[17px] font-semibold tracking-tight text-text">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold tracking-normal text-slate-950">
               {projectDisplayName}
             </h3>
-            <span
-              className="shrink-0 font-mono text-[9.5px] uppercase tracking-[0.08em] text-text-3"
-              title={styleLabel}
+            <p className="mt-1 text-xs text-slate-400">{project.name}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Link
+              href={`/app/projects/${project.name}`}
+              className="grid h-8 w-8 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-black"
+              aria-label={`编辑 ${projectDisplayName}`}
             >
-              {styleLabel}
-            </span>
-          </div>
-
-          <div className="mb-3 flex items-center gap-2">
-            <PhasePill phase={phase} label={phaseLabel} />
-          </div>
-
-          <EpisodeStrip summary={episodes} />
-
-          <div
-            className="mt-3 grid grid-cols-4 overflow-hidden rounded-[7px] border border-hairline-soft"
-            style={{ background: "oklch(0.16 0.010 265 / 0.5)" }}
-          >
-            {(
-              [
-                { k: t("dashboard:lobby_card_stat_cast"), v: characters },
-                { k: t("dashboard:lobby_card_stat_scene"), v: scenes },
-                { k: t("dashboard:lobby_card_stat_prop"), v: propsStat },
-                {
-                  k: t("dashboard:lobby_card_stat_episode"),
-                  v: { completed: episodes.completed, total: episodes.total },
-                },
-              ] as const
-            ).map((cell, i) => (
-              <div
-                key={cell.k}
-                className={
-                  "px-1.5 py-2 text-center" +
-                  (i < 3 ? " border-r border-hairline-soft" : "")
-                }
-              >
-                <div className="font-mono text-[8.5px] font-bold tracking-[0.08em] text-text-3">
-                  {cell.k}
-                </div>
-                <div className="mt-0.5 font-mono text-[11.5px] font-semibold tabular-nums text-text-2">
-                  {cell.v.completed}
-                  <span className="text-text-4">/{cell.v.total || "—"}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 flex items-center gap-2.5">
-            <ProgressBar
-              value={progressPct}
-              label={t("dashboard:lobby_now_editing_progress_label")}
-              className="h-[3px] rounded-[2px] bg-transparent"
-              style={trackStyle}
-              barClassName="rounded-none"
-              barStyle={barStyle}
-            />
-            <span
-              className="font-mono text-[10.5px] font-semibold tabular-nums"
-              style={{
-                color:
-                  phase === "completed" ? "var(--color-good)" : "var(--color-accent-2)",
-              }}
-            >
-              {progressPct}%
-            </span>
-          </div>
-
-          <div className="mt-2.5 flex items-center border-t border-dashed border-hairline-soft pt-2.5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-3">
-              {phaseLabel}
-            </span>
-          </div>
-        </div>
-      </Link>
-
-      <div className="absolute right-2.5 bottom-2.5 z-[2]">
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-label={`${t("dashboard:lobby_card_actions")} — ${projectDisplayName}`}
-          aria-expanded={menuOpen}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setMenuOpen((v) => !v);
-          }}
-          className={
-            "grid h-8 w-8 place-items-center rounded-md border border-hairline-soft bg-bg/70 text-text-3 backdrop-blur transition-[opacity,color,background] hover:bg-bg hover:text-text-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
-            (menuOpen
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100")
-          }
-        >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-        </button>
-        {menuOpen ? (
-          <div
-            ref={menuRef}
-            className="absolute right-0 bottom-[calc(100%+6px)] min-w-[148px] overflow-hidden rounded-md border border-hairline bg-bg-grad-a/95 shadow-[0_18px_40px_-22px_oklch(0_0_0_/_0.7)] backdrop-blur"
-          >
+              <Edit3 className="h-4 w-4" aria-hidden />
+            </Link>
             <button
               type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setMenuOpen(false);
-                onDelete();
-              }}
+              onClick={onDelete}
+              className="grid h-8 w-8 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
               aria-label={`${t("dashboard:delete_project")} — ${projectDisplayName}`}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-danger-2 transition-colors hover:bg-danger-soft focus-visible:bg-danger-soft focus-visible:outline-none"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t("dashboard:delete_project")}
+              <Trash2 className="h-4 w-4" aria-hidden />
             </button>
           </div>
-        ) : null}
-      </div>
-    </article>
-  );
-}
+        </div>
 
-// -- NowEditingCard -----------------------------------------------------------
+        <p className="mt-4 min-h-[44px] text-sm leading-6 text-slate-500">{summary}</p>
 
-interface NowEditingCardProps {
-  project: ProjectSummary;
-  styleLabel: string;
-  phaseLabels: Record<Phase, string>;
-  t: TFunction;
-}
-
-function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardProps) {
-  const status = asProjectStatus(project.status);
-  const phase: Phase | null = status?.current_phase ?? null;
-  const phaseLabel = phase ? phaseLabels[phase] : "";
-  const progressPct = status ? Math.round(status.phase_progress * 100) : 0;
-  const episodes =
-    status?.episodes_summary ?? { total: 0, scripted: 0, in_production: 0, completed: 0 };
-  const characters = status?.characters ?? { completed: 0, total: 0 };
-  const scenes = status?.scenes ?? { completed: 0, total: 0 };
-  const propsStat = status?.props ?? { completed: 0, total: 0 };
-
-  const { trackStyle, barStyle } = gradientProgressStyles(
-    phase === "completed" ? "good" : "accent",
-  );
-
-  return (
-    <article
-      className="grid overflow-hidden rounded-[14px] border border-hairline bg-bg-grad-a"
-      style={{
-        gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
-        boxShadow:
-          "0 30px 80px -40px oklch(0 0 0 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.04)",
-      }}
-    >
-      <div className="p-3.5">
-        <Poster project={project} styleLabel={styleLabel} large />
-      </div>
-      <div className="relative flex flex-col px-7 pb-6 pt-6">
-        <span
-          aria-hidden
-          className="font-editorial pointer-events-none absolute right-[-6px] top-2 italic"
-          style={{ fontSize: 120, lineHeight: 1, color: "oklch(0.22 0.013 280)" }}
-        >
-          now
-        </span>
-        <div className="relative flex items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-[0.14em] text-accent-2">
-            <span
-              aria-hidden
-              className="motion-safe:animate-pulse"
-              style={{
-                width: 5,
-                height: 5,
-                borderRadius: 3,
-                background: "var(--color-accent)",
-                boxShadow: "0 0 8px var(--color-accent-glow)",
-              }}
-            />
-            {t("dashboard:lobby_continue_editing_chip")}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+            角色 {characters.completed}/{characters.total || "—"}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+            场景 {scenes.completed}/{scenes.total || "—"}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+            YAML 剧本
           </span>
         </div>
-        <h3
-          className="font-editorial relative mt-3 mb-1"
-          style={{
-            fontWeight: 400,
-            fontSize: 36,
-            lineHeight: 1,
-            letterSpacing: "-0.012em",
-            color: "var(--color-text)",
-          }}
-        >
-          {getProjectDisplayName(project.title, t("dashboard:untitled_project"))}
-        </h3>
-        <div className="font-editorial relative italic text-text-3" style={{ fontSize: 15 }}>
-          {styleLabel}
-        </div>
 
-        <div aria-hidden className="relative my-4 h-px bg-hairline-soft" />
-
-        <div className="relative mb-3 flex items-center gap-3.5">
-          <PhasePill phase={phase} label={phaseLabel} />
-          <div className="flex flex-1 items-center gap-2.5">
-            <ProgressBar
-              value={progressPct}
-              label={t("dashboard:lobby_now_editing_progress_label")}
-              className="h-[3px] rounded-[2px] bg-transparent"
-              style={trackStyle}
-              barClassName="rounded-none"
-              barStyle={barStyle}
-            />
-            <span className="font-mono text-[11px] font-semibold tabular-nums text-accent-2">
-              {progressPct}%
-            </span>
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+            <span>完成进度</span>
+            <span className="font-semibold text-slate-800">{progressPct}%</span>
           </div>
+          <LightProgressBar value={progressPct} />
         </div>
 
-        <div
-          className="relative grid overflow-hidden rounded-[8px]"
-          style={{
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 1,
-            background: "var(--color-hairline-soft)",
-          }}
-        >
-          {[
-            {
-              k: t("dashboard:lobby_now_editing_phase_label"),
-              v: phaseLabel || "—",
-              sub: t("dashboard:lobby_now_editing_episodes_value", {
-                completed: episodes.completed,
-                total: episodes.total,
-              }),
-            },
-            {
-              k: t("dashboard:characters"),
-              v: `${characters.completed} / ${characters.total || "—"}`,
-              sub: `${t("dashboard:scenes")} ${scenes.completed}/${scenes.total || "—"}`,
-            },
-            {
-              k: t("dashboard:props"),
-              v: `${propsStat.completed} / ${propsStat.total || "—"}`,
-              sub: `${t("dashboard:lobby_now_editing_progress_label")} ${progressPct}%`,
-            },
-          ].map((cell) => (
-            <div
-              key={cell.k}
-              className="px-3.5 py-3"
-              style={{ background: "oklch(0.16 0.010 265 / 0.6)" }}
-            >
-              <div className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-text-3">
-                {cell.k}
-              </div>
-              <div className="mt-1 text-[14px] font-semibold tracking-tight text-text">
-                {cell.v}
-              </div>
-              <div className="mt-0.5 font-mono text-[10px] text-text-3">{cell.sub}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex-1" />
-        <div className="relative mt-4 flex justify-end">
+        <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+          <span className="text-xs text-slate-400">
+            最近更新{" "}
+            {formatDate(new Date(), "zh", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            })}
+          </span>
           <Link
             href={`/app/projects/${project.name}`}
-            className="inline-flex items-center gap-2 rounded-[7px] px-4 py-2.5 text-[12px] font-semibold no-underline transition-transform motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            style={ACCENT_BUTTON_STYLE}
+            className="text-sm font-semibold text-black no-underline hover:underline"
           >
-            {phase === "completed"
-              ? t("dashboard:lobby_open_workspace_completed")
-              : t("dashboard:lobby_open_workspace")}
-            <span aria-hidden>→</span>
+            打开项目
           </Link>
         </div>
       </div>
@@ -667,464 +237,26 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
   );
 }
 
-// -- PlaceholderTile (新建项目 / 导入 ZIP) -----------------------------------
-
-interface PlaceholderTileProps {
-  onClick: () => void;
-  title: string;
-  kicker: string;
-  icon: ReactNode;
-  ariaLabel?: string;
-}
-
-function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: PlaceholderTileProps) {
+function EmptyDashboardCard({ onCreate }: { onCreate: () => void }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="group relative flex h-full min-h-[380px] flex-col overflow-hidden rounded-[12px] border border-dashed border-hairline-strong bg-bg-grad-a/55 text-left transition-colors hover:border-accent/55 hover:bg-bg-grad-a/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      aria-label={ariaLabel ?? title}
+      onClick={onCreate}
+      className="flex min-h-[330px] flex-col items-center justify-center rounded-[8px] border border-dashed border-slate-300 bg-white px-6 text-center transition hover:border-slate-500 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
     >
-      <div className="p-2.5">
-        <div
-          className="relative grid place-items-center overflow-hidden rounded-[6px] border border-dashed border-hairline"
-          style={{
-            aspectRatio: "2 / 1",
-            background:
-              "radial-gradient(120% 80% at 30% 30%, oklch(0.26 0.04 290 / 0.5) 0%, transparent 60%), oklch(0.18 0.011 265 / 0.55)",
-          }}
-        >
-          <div className="flex flex-col items-center gap-2.5 transition-transform motion-safe:group-hover:-translate-y-0.5">
-            <span
-              aria-hidden
-              className="grid h-12 w-12 place-items-center rounded-[12px]"
-              style={{
-                background:
-                  "linear-gradient(180deg, oklch(0.30 0.04 290), oklch(0.22 0.02 280))",
-                border: "1px solid oklch(0.76 0.09 295 / 0.4)",
-                boxShadow:
-                  "inset 0 1px 0 oklch(1 0 0 / 0.06), 0 8px 22px -14px var(--color-accent)",
-                color: "var(--color-accent-2)",
-              }}
-            >
-              {icon}
-            </span>
-            <div className="text-center">
-              <div className="text-[15px] font-semibold tracking-tight text-text-2 transition-colors group-hover:text-text">
-                {title}
-              </div>
-              <div className="mt-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-[0.14em] text-text-3">
-                {kicker}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div aria-hidden className="space-y-3 px-4 pt-1 pb-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="block h-3 w-1/2 rounded-[3px] bg-hairline/85" />
-          <span className="block h-2 w-12 rounded-[3px] bg-hairline/65" />
-        </div>
-        <span className="inline-block h-[18px] w-16 rounded-full border border-dashed border-hairline" />
-        <div className="flex gap-[3px]">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <span key={i} className="h-[3px] flex-1 rounded-[1.5px] bg-hairline/65" />
-          ))}
-        </div>
-        <div
-          className="grid grid-cols-4 overflow-hidden rounded-[7px] border border-dashed border-hairline"
-          style={{ background: "oklch(0.16 0.010 265 / 0.45)" }}
-        >
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className={"px-1.5 py-2.5" + (i < 3 ? " border-r border-dashed border-hairline" : "")}
-            >
-              <span className="mx-auto block h-1.5 w-8 rounded-[1.5px] bg-hairline/75" />
-              <span className="mx-auto mt-1.5 block h-2 w-6 rounded-[1.5px] bg-hairline/55" />
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2.5">
-          <span className="h-[3px] flex-1 rounded-[1.5px] bg-hairline/55" />
-          <span className="h-2 w-7 rounded-[3px] bg-hairline/70" />
-        </div>
-      </div>
+      <span className="grid h-14 w-14 place-items-center rounded-full bg-black text-white">
+        <Plus className="h-6 w-6" aria-hidden />
+      </span>
+      <span className="mt-5 text-lg font-semibold text-slate-950">新建项目</span>
+      <span className="mt-2 max-w-[250px] text-sm leading-6 text-slate-500">
+        导入小说章节或创建 AI Novel 项目，生成可编辑的 YAML 剧本初稿。
+      </span>
     </button>
   );
 }
 
-function NewProjectTile({ onClick, t }: { onClick: () => void; t: TFunction }) {
-  return (
-    <PlaceholderTile
-      onClick={onClick}
-      title={t("dashboard:lobby_new_project_title")}
-      kicker={t("dashboard:lobby_new_project_kicker")}
-      icon={<Plus className="h-6 w-6" />}
-    />
-  );
-}
-
-// -- TopBar -------------------------------------------------------------------
-
-interface TopBarProps {
-  searchValue: string;
-  onSearch: (v: string) => void;
-  onImport: () => void;
-  onCreate: () => void;
-  onSettings: () => void;
-  onAssets: () => void;
-  onOpenClaw: () => void;
-  importing: boolean;
-  configIncomplete: boolean;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
-}
-
-function TopBar({
-  searchValue,
-  onSearch,
-  onImport,
-  onCreate,
-  onSettings,
-  onAssets,
-  onOpenClaw,
-  importing,
-  configIncomplete,
-  searchInputRef,
-}: TopBarProps) {
-  const { t } = useTranslation(["common", "dashboard", "assets"]);
-  return (
-    <div
-      className="sticky top-0 z-30"
-      style={{
-        background:
-          "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
-        backdropFilter: "blur(28px) saturate(1.5)",
-        WebkitBackdropFilter: "blur(28px) saturate(1.5)",
-        borderBottom: "1px solid oklch(1 0 0 / 0.06)",
-        boxShadow:
-          "inset 0 1px 0 oklch(1 0 0 / 0.05), 0 6px 24px -12px oklch(0 0 0 / 0.45)",
-      }}
-    >
-      <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-6 py-3">
-        <div className="flex items-center gap-2.5">
-          <img
-            src="/android-chrome-192x192.png"
-            alt={BRAND.name}
-            className="h-8 w-8 rounded-lg"
-          />
-          <span
-            className="font-sans text-[17px] font-medium tracking-[-0.012em] text-text"
-            aria-hidden
-          >
-            {BRAND.name}
-          </span>
-        </div>
-
-        <label className="ml-2 flex w-[min(420px,100%)] items-center gap-2 rounded-lg border border-hairline-soft bg-bg/55 px-3 py-1.5 transition-colors focus-within:border-accent/60">
-            <Search className="h-3.5 w-3.5 text-text-3" />
-            <input
-              ref={searchInputRef}
-              type="search"
-              name="q"
-              aria-label={t("dashboard:search_projects")}
-              value={searchValue}
-              onChange={(e) => onSearch(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              enterKeyHint="search"
-              inputMode="search"
-              aria-keyshortcuts="Meta+K Control+K"
-              placeholder={t("dashboard:lobby_search_placeholder")}
-              className="flex-1 bg-transparent text-[12.5px] text-text placeholder:text-text-3 outline-none"
-            />
-            <kbd
-              aria-hidden
-              className="rounded border border-hairline-soft px-1.5 py-px font-mono text-[9.5px] text-text-3"
-            >
-              {t("dashboard:lobby_search_kbd")}
-            </kbd>
-        </label>
-
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onAssets}
-            className="inline-flex items-center gap-1.5 rounded-[7px] border border-accent/25 bg-accent-dim px-3 py-1.5 text-[12px] text-text-2 transition-colors hover:border-accent/50 hover:bg-accent-soft hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            title={t("assets:library_title")}
-          >
-            <Library className="h-3.5 w-3.5" />
-            {t("assets:library_title")}
-          </button>
-          <span aria-hidden className="mx-1 h-5 w-px bg-hairline-soft" />
-          <button
-            type="button"
-            onClick={onImport}
-            disabled={importing}
-            className="inline-flex items-center gap-1.5 rounded-[7px] border border-hairline bg-bg-grad-a/50 px-3 py-1.5 text-[12px] text-text-2 transition-colors hover:border-hairline-strong hover:bg-bg-grad-a focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {importing ? (
-              <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
-            {importing ? t("dashboard:importing") : t("dashboard:import_zip")}
-          </button>
-          <button
-            type="button"
-            onClick={onCreate}
-            className="inline-flex items-center gap-1.5 rounded-[7px] px-3.5 py-1.5 text-[12px] font-semibold transition-transform motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            style={ACCENT_BUTTON_STYLE}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("dashboard:create_project")}
-          </button>
-          <span aria-hidden className="mx-1 h-5 w-px bg-hairline-soft" />
-          <button
-            type="button"
-            onClick={onOpenClaw}
-            className="rounded-md px-2 py-1.5 text-sm text-text-3 transition-colors hover:bg-bg-grad-a hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            title={t("dashboard:openclaw")}
-            aria-label={t("dashboard:openclaw")}
-          >
-            <span aria-hidden>🦞</span>
-          </button>
-          <button
-            type="button"
-            onClick={onSettings}
-            className={`relative ${ICON_BTN_FILLED_CLS}`}
-            title={t("settings")}
-            aria-label={t("settings")}
-          >
-            <Settings className="h-4 w-4" aria-hidden />
-            {configIncomplete ? (
-              <span
-                aria-label={t("config_incomplete")}
-                className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-warm-bright"
-              />
-            ) : null}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// -- HeroStrip ----------------------------------------------------------------
-
-const KICKER_DATE_OPTS: Intl.DateTimeFormatOptions = {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  weekday: "short",
-};
-
-interface HeroStripProps {
-  totals: {
-    total: number;
-    production: number;
-    completed: number;
-    drafts: number;
-    episodesCompleted: number;
-    episodesInProduction: number;
-  };
-  t: TFunction;
-}
-
-function HeroStrip({ totals, t }: HeroStripProps) {
-  const { i18n } = useTranslation();
-  const greetingKey = useMemo<GreetingKey>(() => getGreetingKey(), []);
-  const dateLine = useMemo(
-    () => formatDate(new Date(), i18n.language || "zh", KICKER_DATE_OPTS, new Date().toISOString().slice(0, 10)),
-    [i18n.language],
-  );
-
-  let subtitle: string;
-  if (totals.production > 0) {
-    subtitle = t("dashboard:lobby_hero_subtitle_active", { count: totals.production });
-  } else if (totals.total > 0) {
-    subtitle = t("dashboard:lobby_hero_subtitle_quiet");
-  } else {
-    subtitle = t("dashboard:lobby_hero_subtitle_idle");
-  }
-  const summaryLine =
-    totals.total === 0
-      ? t("dashboard:lobby_hero_summary_idle")
-      : t("dashboard:lobby_hero_summary", {
-          completed: totals.episodesCompleted,
-          inProduction: totals.episodesInProduction,
-        });
-
-  const stats: Array<{ key: string; label: string; value: number; tone: CSSProperties }> = [
-    {
-      key: "total",
-      label: t("dashboard:lobby_stat_total"),
-      value: totals.total,
-      tone: { color: "var(--color-text)" },
-    },
-    {
-      key: "prod",
-      label: t("dashboard:lobby_stat_production"),
-      value: totals.production,
-      tone: { color: "var(--color-accent-2)" },
-    },
-    {
-      key: "draft",
-      label: t("dashboard:lobby_stat_drafts"),
-      value: totals.drafts,
-      tone: { color: "oklch(0.86 0.06 75)" },
-    },
-    {
-      key: "done",
-      label: t("dashboard:lobby_stat_completed"),
-      value: totals.completed,
-      tone: { color: "var(--color-good)" },
-    },
-  ];
-
-  return (
-    <div className="mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
-      <div className="min-w-0 flex-1">
-        <h1
-          className="font-editorial m-0"
-          style={{
-            fontSize: 46,
-            fontWeight: 400,
-            lineHeight: 1.22,
-            letterSpacing: "-0.012em",
-            color: "var(--color-text)",
-          }}
-        >
-          <Typewriter
-            once="lobby-hero"
-            segments={
-              [
-                { text: t(`dashboard:${greetingKey}`), after: <br /> },
-                {
-                  text: subtitle,
-                  style: { fontStyle: "italic", color: "var(--color-accent-2)" },
-                },
-              ] satisfies TypewriterSegment[]
-            }
-          />
-        </h1>
-        <p className="m-0 mt-2.5 max-w-[560px] text-[13px] leading-[1.55] text-text-3">
-          {summaryLine}
-        </p>
-      </div>
-      <div className="flex flex-col items-end justify-between gap-2.5">
-        <div className="mt-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-2">
-          {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
-        </div>
-        <div
-          className="flex items-stretch overflow-hidden rounded-[10px] border border-hairline-soft"
-          style={{ background: "oklch(0.16 0.010 265 / 0.4)" }}
-        >
-          {stats.map((s, i) => (
-            <div
-              key={s.key}
-              className={
-                "px-4 py-2.5" +
-                (i < stats.length - 1 ? " border-r border-hairline-soft" : "")
-              }
-            >
-              <div className="font-mono text-[9px] font-bold tracking-[0.14em] text-text-3">
-                {s.label}
-              </div>
-              <div
-                className="font-editorial mt-0.5 tabular-nums"
-                style={{
-                  fontSize: 30,
-                  fontWeight: 400,
-                  lineHeight: 1,
-                  letterSpacing: "-0.012em",
-                  ...s.tone,
-                }}
-              >
-                {s.value}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// -- FilterPills --------------------------------------------------------------
-
-interface FilterPillsProps {
-  active: PhaseFilter;
-  onChange: (next: PhaseFilter) => void;
-  counts: Record<Phase, number> & { all: number };
-  phaseLabels: Record<Phase, string>;
-  t: TFunction;
-}
-
-function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsProps) {
-  const pills: Array<{ key: PhaseFilter; label: string; n: number }> = [
-    { key: "all", label: t("dashboard:lobby_filter_all"), n: counts.all },
-    { key: "production", label: phaseLabels.production, n: counts.production },
-    { key: "scripting", label: phaseLabels.scripting, n: counts.scripting },
-    { key: "worldbuilding", label: phaseLabels.worldbuilding, n: counts.worldbuilding },
-    { key: "completed", label: phaseLabels.completed, n: counts.completed },
-    { key: "setup", label: phaseLabels.setup, n: counts.setup },
-  ];
-
-  return (
-    <div
-      className="sticky z-20 border-b border-hairline backdrop-blur-md"
-      style={{
-        top: "var(--lobby-topbar-h, 57px)",
-        background:
-          "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
-        backdropFilter: "blur(16px) saturate(1.1)",
-        borderTopWidth: 1,
-        borderTopColor: "var(--color-hairline-soft)",
-      }}
-    >
-      <div className="mx-auto flex max-w-[1320px] items-center gap-1.5 px-6 py-2.5">
-        {pills.map((c) => {
-          const isActive = active === c.key;
-          return (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => onChange(c.key)}
-              aria-pressed={isActive}
-              className={
-                "inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
-                (isActive
-                  ? "border border-accent/40 bg-accent/45 text-text"
-                  : "border border-hairline-soft bg-[oklch(0.22_0.012_265_/_0.7)] text-text-3 hover:border-hairline hover:bg-[oklch(0.24_0.012_265_/_0.78)] hover:text-text-2")
-              }
-            >
-              {c.label}
-              <span
-                className={
-                  "ml-1.5 font-mono tabular-nums " +
-                  (isActive ? "text-accent-2" : "text-text-4")
-                }
-              >
-                {c.n}
-              </span>
-            </button>
-          );
-        })}
-        <div className="flex-1" />
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-3">
-          {t("dashboard:lobby_sort_recent")}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// -- ProjectsPage -------------------------------------------------------------
-
 export function ProjectsPage() {
-  const { t, i18n } = useTranslation(["common", "dashboard", "assets"]);
+  const { t, i18n } = useTranslation(["common", "dashboard", "assets", "templates"]);
   const [, navigate] = useLocation();
   const {
     projects,
@@ -1143,7 +275,6 @@ export function ProjectsPage() {
     | { source: "failure"; diagnostics: ImportFailureDiagnostics };
   const [importDiagnostics, setImportDiagnostics] =
     useState<ImportDiagnosticsState | null>(null);
-  const [showOpenClaw, setShowOpenClaw] = useState(false);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>("all");
@@ -1290,46 +421,18 @@ export function ProjectsPage() {
     }
   };
 
-  const phaseCounts = useMemo(() => {
-    const out: Record<Phase, number> & { all: number } = {
-      all: 0,
-      setup: 0,
-      worldbuilding: 0,
-      scripting: 0,
-      production: 0,
-      completed: 0,
-    };
-    for (const p of projects) {
-      out.all += 1;
-      const status = asProjectStatus(p.status);
-      if (status) out[status.current_phase] += 1;
-    }
-    return out;
-  }, [projects]);
-
   const totals = useMemo(() => {
     let production = 0;
     let completed = 0;
     let drafts = 0;
-    let episodesCompleted = 0;
-    let episodesInProduction = 0;
     for (const p of projects) {
       const s = asProjectStatus(p.status);
       if (!s) continue;
       if (s.current_phase === "production") production += 1;
       else if (s.current_phase === "completed") completed += 1;
       else drafts += 1;
-      episodesCompleted += s.episodes_summary.completed;
-      episodesInProduction += s.episodes_summary.in_production;
     }
-    return {
-      total: projects.length,
-      production,
-      completed,
-      drafts,
-      episodesCompleted,
-      episodesInProduction,
-    };
+    return { total: projects.length, production, completed, drafts };
   }, [projects]);
 
   const styleLabels = useMemo(() => {
@@ -1351,45 +454,19 @@ export function ProjectsPage() {
     });
   }, [projects, phaseFilter, searchQuery, phaseLabels]);
 
-  const featuredCandidate = useMemo(() => pickFeaturedProject(projects), [projects]);
-  const featured =
-    phaseFilter === "all" && !searchQuery.trim() ? featuredCandidate : null;
-
-  const restProjects = useMemo(
-    () =>
-      featured
-        ? filteredProjects.filter((p) => p.name !== featured.name)
-        : filteredProjects,
-    [featured, filteredProjects],
+  const dashboardStats = useMemo(
+    () => [
+      { label: "全部项目", value: totals.total },
+      { label: "制作中", value: totals.production },
+      { label: "已完成", value: totals.completed },
+    ],
+    [totals.completed, totals.production, totals.total],
   );
 
+  const phaseFilters: PhaseFilter[] = ["all", "production", "scripting", "completed"];
+
   return (
-    <div
-      className="relative min-h-screen text-text"
-      style={
-        {
-          // FilterPills 的 sticky top 读这个变量；TopBar = logo h-8 (32) + py-3 (24) + 1px border
-          "--lobby-topbar-h": "57px",
-          background:
-            "radial-gradient(1100px 540px at 8% -10%, oklch(0.32 0.05 295 / 0.28), transparent 55%), radial-gradient(900px 500px at 100% 110%, oklch(0.26 0.04 260 / 0.25), transparent 55%), linear-gradient(180deg, var(--color-bg-grad-a), var(--color-bg-grad-b))",
-        } as CSSProperties
-      }
-    >
-      <TopBar
-        searchValue={searchQuery}
-        onSearch={setSearchQuery}
-        onImport={() => importInputRef.current?.click()}
-        onCreate={() => setShowCreateModal(true)}
-        onSettings={() => navigate("/app/settings")}
-        onAssets={() => {
-          rememberAssetLibraryReturnTo(window.location.pathname);
-          navigate("/app/assets");
-        }}
-        onOpenClaw={() => setShowOpenClaw(true)}
-        importing={importingProject}
-        configIncomplete={!isConfigComplete}
-        searchInputRef={searchInputRef}
-      />
+    <div className="min-h-screen bg-[#ececec] p-3 text-slate-950 sm:p-4">
       <input
         ref={importInputRef}
         type="file"
@@ -1399,95 +476,149 @@ export function ProjectsPage() {
         className="hidden"
       />
 
-      <HeroStrip totals={totals} t={t} />
-
-      {projects.length > 0 ? (
-        <FilterPills
-          active={phaseFilter}
-          onChange={setPhaseFilter}
-          counts={phaseCounts}
-          phaseLabels={phaseLabels}
-          t={t}
+      <div className="flex min-h-[calc(100vh-24px)] gap-3 sm:gap-4">
+        <DashboardSidebar
+          onHome={() => navigate("/app/workspace")}
+          onAssets={() => {
+            rememberAssetLibraryReturnTo(window.location.pathname);
+            navigate("/app/assets");
+          }}
+          onSettings={() => navigate("/app/settings")}
+          configIncomplete={!isConfigComplete}
         />
-      ) : null}
 
-      <main className="mx-auto max-w-[1320px] px-6 pt-6 pb-16">
-        {projectsLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 motion-safe:animate-spin text-accent" />
-            <span className="ml-2 text-text-3">{t("dashboard:loading_projects")}</span>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <NewProjectTile onClick={() => setShowCreateModal(true)} t={t} />
-          </div>
-        ) : (
-          <>
-            {featured ? (
-              <section className="mb-7" aria-labelledby="lobby-now-editing-heading">
-                <div className="mb-3 flex items-baseline justify-between">
-                  <h2
-                    id="lobby-now-editing-heading"
-                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-text-2"
+        <main className="flex min-w-0 flex-1 flex-col rounded-[26px] bg-white px-5 py-6 shadow-[0_16px_60px_rgba(15,23,42,0.06)] sm:px-8 lg:px-10">
+          <header className="flex flex-col gap-5 border-b border-slate-100 pb-6 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                <Folder className="h-3.5 w-3.5" aria-hidden />
+                AI Novel Workspace
+              </div>
+              <h1 className="text-4xl font-semibold tracking-normal text-black">我的项目</h1>
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                管理您的所有短剧项目，继续编辑小说转剧本、YAML 初稿、角色资产和分镜流程。
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={importingProject}
+                className="inline-flex h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {importingProject ? (
+                  <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="h-4 w-4" aria-hidden />
+                )}
+                {importingProject ? t("dashboard:importing") : t("dashboard:import_zip")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                新建项目
+              </button>
+            </div>
+          </header>
+
+          <section className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+            <label className="flex min-h-12 items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 transition focus-within:border-slate-400 focus-within:bg-white">
+              <Search className="h-4 w-4 text-slate-400" aria-hidden />
+              <input
+                ref={searchInputRef}
+                type="search"
+                name="q"
+                aria-label={t("dashboard:search_projects")}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="搜索项目、阶段或剧本"
+                className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {phaseFilters.map((key) => {
+                const label = key === "all" ? "全部" : phaseLabels[key];
+                const isActive = phaseFilter === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => setPhaseFilter(key)}
+                    className={
+                      "h-10 rounded-full px-4 text-sm font-medium transition " +
+                      (isActive
+                        ? "bg-black text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-black")
+                    }
                   >
-                    {t("dashboard:lobby_now_editing_eyebrow")}
-                  </h2>
-                </div>
-                <NowEditingCard
-                  project={featured}
-                  styleLabel={styleLabels[featured.name] ?? ""}
-                  phaseLabels={phaseLabels}
-                  t={t}
-                />
-              </section>
-            ) : null}
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
-            {filteredProjects.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-text-3">
-                <p className="text-lg text-text">{t("dashboard:lobby_no_filter_match")}</p>
-                <p className="mt-1 text-sm">{t("dashboard:lobby_no_filter_match_hint")}</p>
+          <section className="mt-6 grid gap-3 sm:grid-cols-3">
+            {dashboardStats.map((stat) => (
+              <div key={stat.label} className="rounded-[8px] border border-slate-100 bg-slate-50 px-5 py-4">
+                <div className="text-sm text-slate-500">{stat.label}</div>
+                <div className="mt-2 text-3xl font-semibold text-black">{stat.value}</div>
+              </div>
+            ))}
+          </section>
+
+          <section className="mt-7 flex-1" aria-labelledby="project-dashboard-heading">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id="project-dashboard-heading" className="text-lg font-semibold text-black">
+                项目列表
+              </h2>
+              <span className="text-sm text-slate-400">{filteredProjects.length} 个项目</span>
+            </div>
+
+            {projectsLoading ? (
+              <div className="flex items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 py-20">
+                <Loader2 className="h-6 w-6 motion-safe:animate-spin text-slate-500" />
+                <span className="ml-2 text-slate-500">{t("dashboard:loading_projects")}</span>
+              </div>
+            ) : filteredProjects.length === 0 && projects.length > 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 py-16 text-center">
+                <p className="text-lg font-semibold text-black">{t("dashboard:lobby_no_filter_match")}</p>
+                <p className="mt-2 text-sm text-slate-500">{t("dashboard:lobby_no_filter_match_hint")}</p>
                 <button
                   type="button"
                   onClick={() => {
                     setPhaseFilter("all");
                     setSearchQuery("");
                   }}
-                  className="mt-4 rounded-md border border-hairline px-3 py-1.5 text-[12px] text-text-2 hover:border-accent/40 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="mt-5 rounded-full bg-black px-5 py-2 text-sm font-semibold text-white"
                 >
                   {t("dashboard:lobby_clear_filters")}
                 </button>
               </div>
             ) : (
-              <section aria-labelledby="lobby-library-heading">
-                <div className="mb-3 flex items-baseline justify-between">
-                  <h2
-                    id="lobby-library-heading"
-                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-text-2"
-                  >
-                    {t("dashboard:lobby_library_eyebrow")}
-                  </h2>
-                  <span className="font-mono text-[10.5px] tabular-nums text-text-3">
-                    {t("dashboard:lobby_library_count", { count: restProjects.length })}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {restProjects.map((project) => (
-                    <ProjectCard
-                      key={project.name}
-                      project={project}
-                      styleLabel={styleLabels[project.name] ?? ""}
-                      phaseLabels={phaseLabels}
-                      t={t}
-                      onDelete={() => setDeletingProject(project)}
-                    />
-                  ))}
-                  <NewProjectTile onClick={() => setShowCreateModal(true)} t={t} />
-                </div>
-              </section>
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {filteredProjects.map((project) => (
+                  <ProjectDashboardCard
+                    key={project.name}
+                    project={project}
+                    styleLabel={styleLabels[project.name] ?? ""}
+                    phaseLabels={phaseLabels}
+                    t={t}
+                    onDelete={() => setDeletingProject(project)}
+                  />
+                ))}
+                <EmptyDashboardCard onCreate={() => setShowCreateModal(true)} />
+              </div>
             )}
-          </>
-        )}
-      </main>
+          </section>
+        </main>
+      </div>
 
       {conflictProject && conflictFile && (
         <ConflictDialog
@@ -1542,7 +673,6 @@ export function ProjectsPage() {
         />
       )}
 
-      {showOpenClaw && <OpenClawModal onClose={() => setShowOpenClaw(false)} />}
       {showCreateModal && <CreateProjectModal />}
 
       <ConfirmDialog
@@ -1568,8 +698,6 @@ export function ProjectsPage() {
     </div>
   );
 }
-
-// -- ConflictDialog -----------------------------------------------------------
 
 function ConflictDialog({
   projectName,
@@ -1665,7 +793,7 @@ function ConflictDialog({
 
         <div className="mt-5 flex justify-end">
           <SecondaryButton size="sm" onClick={onCancel} disabled={importing}>
-            {t("cancel")}
+            {t("common:cancel")}
           </SecondaryButton>
         </div>
       </div>

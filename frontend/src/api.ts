@@ -262,6 +262,13 @@ export interface AINovelProjectResponse {
   chapter_count: number;
 }
 
+export interface AINovelValidateChaptersResponse {
+  valid: boolean;
+  chapter_count: number;
+  chapters: AINovelSourceChapter[];
+  error?: string;
+}
+
 /** Draft metadata returned by listDrafts. */
 export interface DraftInfo {
   episode: number;
@@ -448,6 +455,15 @@ class API {
     payload: AINovelProjectPayload,
   ): Promise<AINovelProjectResponse> {
     return this.request("/ai-novel/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async validateNovelChapters(
+    payload: Pick<AINovelProjectPayload, "source_text">,
+  ): Promise<AINovelValidateChaptersResponse> {
+    return this.request("/ai-novel/validate-chapters", {
       method: "POST",
       body: JSON.stringify(payload),
     });

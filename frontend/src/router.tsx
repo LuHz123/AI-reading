@@ -166,9 +166,7 @@ export function AppRoutes() {
 
         {/* AI Novel landing page */}
         <Route path="/app/projects">
-          <AuthGuard>
-            <AINovelLandingPage />
-          </AuthGuard>
+          <AINovelLandingPage />
         </Route>
 
         {/* AI Novel conversion flow */}
@@ -180,9 +178,7 @@ export function AppRoutes() {
 
         {/* Workspace project list */}
         <Route path="/app/workspace">
-          <AuthGuard>
-            <ProjectsPage />
-          </AuthGuard>
+          <ProjectsPage />
         </Route>
 
         {/* System settings */}

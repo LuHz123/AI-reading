@@ -80,6 +80,20 @@ describe("AppRoutes", () => {
     expect(await screen.findByTestId("ai-novel-create")).toBeInTheDocument();
   });
 
+  it("renders the public landing page without authentication", async () => {
+    useAuthStore.setState({ isAuthenticated: false, isLoading: false });
+    renderAt("/app/projects");
+    expect(await screen.findByTestId("ai-novel-landing")).toBeInTheDocument();
+    expect(screen.queryByTestId("login-page")).not.toBeInTheDocument();
+  });
+
+  it("renders the public project dashboard without authentication", async () => {
+    useAuthStore.setState({ isAuthenticated: false, isLoading: false });
+    renderAt("/app/workspace");
+    expect(await screen.findByTestId("projects-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("login-page")).not.toBeInTheDocument();
+  });
+
   it("renders 404 for unknown routes", () => {
     renderAt("/not-found");
     expect(screen.getByText("404")).toBeInTheDocument();
@@ -169,9 +183,9 @@ describe("AppRoutes", () => {
     expect(screen.queryByText("404")).not.toBeInTheDocument();
   });
 
-  it("redirects unauthenticated non-nested protected route to /login", async () => {
+  it("redirects unauthenticated protected create route to /login", async () => {
     useAuthStore.setState({ isAuthenticated: false, isLoading: false });
-    renderAt("/app/projects");
+    renderAt("/app/novel/new");
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
   });
 

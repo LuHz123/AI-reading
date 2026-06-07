@@ -142,7 +142,7 @@ describe("ProjectsPage", () => {
     await screen.findByText("新建项目");
     expect(screen.queryByTestId("create-project-modal")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "创建项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("create-project-modal")).toBeInTheDocument();
