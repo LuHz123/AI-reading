@@ -27,7 +27,7 @@ class TestIsAuthEnabled:
     @pytest.mark.parametrize(
         "raw,expected",
         [
-            (None, True),  # 未设置 → 默认开启（向后兼容）
+            (None, False),  # 未设置 → 默认关闭登录，适合单机 AI Novel 工具
             ("true", True),
             ("True", True),
             ("TRUE", True),
@@ -40,8 +40,8 @@ class TestIsAuthEnabled:
             ("0", False),
             ("no", False),
             ("off", False),
-            ("", True),  # 空串视为未配置 → 回退默认（开启），fail-closed
-            ("  ", True),  # 仅空白同上
+            ("", False),  # 空串视为未配置 → 回退默认关闭登录
+            ("  ", False),  # 仅空白同上
             ("  false  ", False),
         ],
     )
@@ -69,7 +69,7 @@ class TestEnsureAuthPasswordKillSwitch:
     def test_enabled_still_generates(self, tmp_path):
         env_file = tmp_path / ".env"
         env = os.environ.copy()
-        env.pop("AUTH_ENABLED", None)
+        env["AUTH_ENABLED"] = "true"
         env.pop("AUTH_PASSWORD", None)
         with patch.dict(os.environ, env, clear=True):
             result = auth_module.ensure_auth_password(env_path=str(env_file))
@@ -131,9 +131,9 @@ class TestGetCurrentUserKillSwitch:
         assert user.sub == "local"
 
     @pytest.mark.asyncio
-    async def test_enabled_without_token_raises_401(self):
+    async def test_explicitly_enabled_without_token_raises_401(self):
         env = os.environ.copy()
-        env.pop("AUTH_ENABLED", None)
+        env["AUTH_ENABLED"] = "true"
         env["AUTH_TOKEN_SECRET"] = "test-secret-key-that-is-at-least-32-bytes"
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(HTTPException) as exc_info:
@@ -147,9 +147,9 @@ class TestGetCurrentUserKillSwitch:
         assert user.sub == "local"
 
     @pytest.mark.asyncio
-    async def test_flexible_enabled_without_token_raises_401(self):
+    async def test_flexible_explicitly_enabled_without_token_raises_401(self):
         env = os.environ.copy()
-        env.pop("AUTH_ENABLED", None)
+        env["AUTH_ENABLED"] = "true"
         env["AUTH_TOKEN_SECRET"] = "test-secret-key-that-is-at-least-32-bytes"
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(HTTPException) as exc_info:

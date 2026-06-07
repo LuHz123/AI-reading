@@ -46,17 +46,17 @@ TOKEN_EXPIRY_SECONDS = 7 * 24 * 3600
 # 关闭认证时返回的匿名用户标识
 _ANONYMOUS_USER_SUB = "local"
 
-# 视为"关闭认证"的 env 取值。空串不在内 —— .env 误写 `AUTH_ENABLED=` 应回退到默认（开启），
-# 避免静默 fail-open。
-_AUTH_DISABLED_VALUES = frozenset({"false", "0", "no", "off"})
+# 视为"关闭认证"的 env 取值。AI Novel 默认免登录；如需登录和 token 校验，
+# 显式设置 `AUTH_ENABLED=true`。
+_AUTH_DISABLED_VALUES = frozenset({"", "false", "0", "no", "off"})
 
 
 def is_auth_enabled() -> bool:
-    """``AUTH_ENABLED`` env 解析。默认 ``true``，保持现有部署行为；空值也按默认。
+    """``AUTH_ENABLED`` env 解析。默认 ``false``，空值也按默认关闭登录。
 
     ``false`` / ``0`` / ``no`` / ``off`` 一律视为关闭（不区分大小写）。
     """
-    return os.environ.get("AUTH_ENABLED", "true").strip().lower() not in _AUTH_DISABLED_VALUES
+    return os.environ.get("AUTH_ENABLED", "false").strip().lower() not in _AUTH_DISABLED_VALUES
 
 
 def _anonymous_user() -> "CurrentUserInfo":

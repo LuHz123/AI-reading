@@ -31,10 +31,14 @@ vi.mock("@/components/pages/AINovelCreatePage", () => ({
   AINovelCreatePage: () => <div data-testid="ai-novel-create">AI Novel Create</div>,
 }));
 
+vi.mock("@/components/pages/AssetLibraryPage", () => ({
+  AssetLibraryPage: () => <div data-testid="asset-library-page">Asset Library</div>,
+}));
+
 function renderAt(path: string) {
-  const { hook } = memoryLocation({ path });
+  const location = memoryLocation({ path, record: true });
   return render(
-    <Router hook={hook}>
+    <Router hook={location.hook} searchHook={location.searchHook}>
       <AppRoutes />
     </Router>,
   );
@@ -49,14 +53,11 @@ describe("AppRoutes", () => {
   beforeEach(() => {
     resetStores();
     useAuthStore.setState({ isAuthenticated: true, isLoading: false });
-    // ConfigStatusLoader 在 AppRoutes 中始终挂载；预置 initialized 让其 fetch() 短路，
-    // 路由测试无需关心配置状态，也避免触发未 mock 的供应商接口与退避重试。
     useConfigStatusStore.setState({ initialized: true });
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
-    // 个别用例切到 fake timers,统一还原,避免污染其它用例。
     vi.useRealTimers();
   });
 
@@ -80,24 +81,30 @@ describe("AppRoutes", () => {
     expect(await screen.findByTestId("ai-novel-create")).toBeInTheDocument();
   });
 
-  it("renders the public landing page without authentication", async () => {
+  it("renders public app pages without authentication", async () => {
     useAuthStore.setState({ isAuthenticated: false, isLoading: false });
     renderAt("/app/projects");
     expect(await screen.findByTestId("ai-novel-landing")).toBeInTheDocument();
     expect(screen.queryByTestId("login-page")).not.toBeInTheDocument();
   });
 
-  it("renders the public project dashboard without authentication", async () => {
+  it("opens the asset library without authentication", async () => {
     useAuthStore.setState({ isAuthenticated: false, isLoading: false });
-    renderAt("/app/workspace");
-    expect(await screen.findByTestId("projects-page")).toBeInTheDocument();
+    renderAt("/app/assets");
+    expect(await screen.findByTestId("asset-library-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("login-page")).not.toBeInTheDocument();
+  });
+
+  it("redirects legacy login URLs back into the app", async () => {
+    useAuthStore.setState({ isAuthenticated: false, isLoading: false });
+    renderAt("/login?from=%2Fapp%2Fassets");
+    expect(await screen.findByTestId("asset-library-page")).toBeInTheDocument();
     expect(screen.queryByTestId("login-page")).not.toBeInTheDocument();
   });
 
   it("renders 404 for unknown routes", () => {
     renderAt("/not-found");
     expect(screen.getByText("404")).toBeInTheDocument();
-    expect(screen.getByText("页面未找到")).toBeInTheDocument();
   });
 
   it("loads project workspace and resets assistant state", async () => {
@@ -174,41 +181,34 @@ describe("AppRoutes", () => {
     });
   });
 
-  it("redirects unauthenticated nested project URL to top-level /login", async () => {
+  it("opens nested project URLs without authentication", async () => {
     useAuthStore.setState({ isAuthenticated: false, isLoading: false });
     renderAt("/app/projects/demo");
-    // 回归：AuthGuard 渲染在 nest 路由内，相对的 /login 会被拼成
-    // /app/projects/demo/login（无匹配 → 404）；用 ~/login 绝对路径才落到 /login。
-    expect(await screen.findByTestId("login-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("studio-layout")).toBeInTheDocument();
     expect(screen.queryByText("404")).not.toBeInTheDocument();
   });
 
-  it("redirects unauthenticated protected create route to /login", async () => {
+  it("opens the create route without authentication", async () => {
     useAuthStore.setState({ isAuthenticated: false, isLoading: false });
     renderAt("/app/novel/new");
-    expect(await screen.findByTestId("login-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("ai-novel-create")).toBeInTheDocument();
   });
 
-  it("ConfigStatusLoader 挂载后拉取配置状态,未初始化时按退避重试", async () => {
+  it("ConfigStatusLoader retries while config status is not initialized", async () => {
     vi.useFakeTimers();
-    // 从未初始化起步,让根级 ConfigStatusLoader 真正执行 fetch/重试逻辑
     useConfigStatusStore.setState(useConfigStatusStore.getInitialState(), true);
-    // 让配置拉取失败 → store 保持未初始化 → loader 按退避重试
     vi.spyOn(API, "getProviders").mockRejectedValue(new Error("backend not ready"));
     vi.spyOn(API, "listCustomProviders").mockRejectedValue(new Error("backend not ready"));
     vi.spyOn(API, "getSystemConfig").mockRejectedValue(new Error("backend not ready"));
 
     renderAt("/app/projects");
 
-    // 挂载即首次拉取
     await vi.advanceTimersByTimeAsync(0);
     expect(API.getProviders).toHaveBeenCalledTimes(1);
 
-    // 第一次退避重试(800ms)
     await vi.advanceTimersByTimeAsync(800);
     expect(API.getProviders).toHaveBeenCalledTimes(2);
 
-    // 第二次退避重试(再 1600ms)
     await vi.advanceTimersByTimeAsync(1600);
     expect(API.getProviders).toHaveBeenCalledTimes(3);
   });

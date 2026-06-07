@@ -337,13 +337,7 @@ function handleUnauthorized(response: Response): void {
   if (response.status !== 401) return;
 
   clearToken();
-  // 携带当前所在的站内地址，登录成功后回跳；仅对 /app/ 下的页面附加 from，
-  // 避免把登录页自身等非应用路径写进回跳参数。
-  const current = `${globalThis.location.pathname}${globalThis.location.search}${globalThis.location.hash}`;
-  globalThis.location.href = current.startsWith("/app/")
-    ? `/login?from=${encodeURIComponent(current)}`
-    : "/login";
-  throw new Error("认证已过期，请重新登录");
+  throw new Error("请求未授权，请检查后端 AUTH_ENABLED 配置或 API 凭据。");
 }
 
 /** 为 fetch options 注入 Authorization header */

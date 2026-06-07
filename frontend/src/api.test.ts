@@ -133,7 +133,7 @@ describe("API", () => {
       await expect(API.request("/projects")).rejects.toThrow("Service Unavailable");
     });
 
-    it("clears auth and redirects on unauthorized responses", async () => {
+    it("clears auth without redirecting on unauthorized responses", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         mockResponse({
           ok: false,
@@ -147,13 +147,13 @@ describe("API", () => {
       const location = { href: "", pathname: "/app", search: "", hash: "" };
       vi.stubGlobal("location", location);
 
-      await expect(API.request("/projects")).rejects.toThrow("认证已过期，请重新登录");
+      await expect(API.request("/projects")).rejects.toThrow("请求未授权");
 
       expect(clearTokenMock).toHaveBeenCalledTimes(1);
-      expect(location.href).toBe("/login");
+      expect(location.href).toBe("");
     });
 
-    it("appends the current /app path as ?from when redirecting on 401", async () => {
+    it("keeps the current page when handling 401 responses", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         mockResponse({ ok: false, status: 401, statusText: "Unauthorized" }),
       );
@@ -161,9 +161,9 @@ describe("API", () => {
       const location = { href: "", pathname: "/app/projects/demo", search: "", hash: "" };
       vi.stubGlobal("location", location);
 
-      await expect(API.request("/projects")).rejects.toThrow("认证已过期，请重新登录");
+      await expect(API.request("/projects")).rejects.toThrow("请求未授权");
 
-      expect(location.href).toBe("/login?from=%2Fapp%2Fprojects%2Fdemo");
+      expect(location.href).toBe("");
     });
   });
 
@@ -637,10 +637,10 @@ describe("API", () => {
 
       await expect(
         API.importProject(new File(["zip"], "demo.zip", { type: "application/zip" }))
-      ).rejects.toThrow("认证已过期，请重新登录");
+      ).rejects.toThrow("请求未授权");
 
       expect(clearTokenMock).toHaveBeenCalledTimes(1);
-      expect(location.href).toBe("/login");
+      expect(location.href).toBe("/app/projects");
     });
 
     describe("downloadDiagnostics", () => {
@@ -685,9 +685,9 @@ describe("API", () => {
         const location = { href: "", pathname: "/app/settings", search: "", hash: "" };
         vi.stubGlobal("location", location);
 
-        await expect(API.downloadDiagnostics()).rejects.toThrow("认证已过期，请重新登录");
+        await expect(API.downloadDiagnostics()).rejects.toThrow("请求未授权");
         expect(clearTokenMock).toHaveBeenCalledTimes(1);
-        expect(location.href).toBe("/login?from=%2Fapp%2Fsettings");
+        expect(location.href).toBe("");
       });
 
       it("throws on other HTTP errors", async () => {
