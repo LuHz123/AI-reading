@@ -87,6 +87,7 @@ htmlcov/
 
 # File locks (project_manager 原子写产物)
 **/*.lock
+!uv.lock
 
 # Docker runtime data
 claude_data/
