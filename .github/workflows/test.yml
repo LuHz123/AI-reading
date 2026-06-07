@@ -13,15 +13,47 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      backend: ${{ steps.filter.outputs.backend }}
+      database: ${{ steps.filter.outputs.database }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
+            backend:
+              - 'lib/**'
+              - 'server/**'
+              - 'scripts/**'
+              - 'tests/**'
+              - 'agent_runtime_profile/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'alembic.ini'
+            database:
+              - 'alembic/**'
+              - 'lib/db/**'
+              - 'lib/**/db*.py'
+              - 'server/**/db*.py'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'alembic.ini'
+            frontend:
+              - 'frontend/**'
             code:
-              - '**'
+              - 'lib/**'
+              - 'server/**'
+              - 'scripts/**'
+              - 'tests/**'
+              - 'agent_runtime_profile/**'
+              - 'frontend/**'
+              - 'alembic/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'alembic.ini'
+              - '.github/workflows/test.yml'
               - '!**/*.md'
               - '!docs/**'
               - '!LICENSE'
@@ -30,7 +62,7 @@ jobs:
 
   backend-tests:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -71,7 +103,7 @@ jobs:
     # SQLite/PostgreSQL 方言兼容性闸门：alembic 三步闭环（upgrade/downgrade/idempotent）
     # + 所有 DB-touching 测试（marker 驱动）跑在 PG16 上。
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.database == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -128,7 +160,7 @@ jobs:
 
   frontend-tests:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
